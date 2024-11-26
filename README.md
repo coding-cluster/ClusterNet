@@ -1,5 +1,12 @@
 # ClusterNet: An Intelligent Pipeline for Biomolecular Sequence Analysis
 
+## Authors
+- Flores Robledo Oscar Jovany
+- Landín García David Ismael
+- Zúñiga Alonso Alexis Alberto
+
+## ClusterNet:
+
 ClusterNet is an advanced data analysis pipeline designed to perform clustering and classification on biomolecular sequences. This project integrates cutting-edge techniques to extract insights from complex datasets, combining:
 
 1. **K-Means Clustering:** For identifying natural groupings in high-dimensional data.
