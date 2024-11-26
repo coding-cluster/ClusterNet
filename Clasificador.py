@@ -9,149 +9,109 @@ from imblearn.over_sampling import SMOTE
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Configuración general para visualización
+sns.set(style="whitegrid")
+
 # Cargar el dataset
 data = pd.read_csv("sequence_analysis_results.csv")
 
 # Definir columnas no numéricas
 non_numerical_columns = ['Type', 'Accession', 'UniProtID', 'SequenceLength']
 
-# Eliminar columnas no numéricas para obtener datos numéricos
+# Filtrar columnas no numéricas y trabajar solo con las numéricas
 numerical_data = data.drop(columns=non_numerical_columns, errors='ignore')
 
 # Manejar valores faltantes en los datos numéricos
-numerical_data = numerical_data.fillna(numerical_data.mean())
+numerical_data.fillna(numerical_data.mean(), inplace=True)
 
-# Estandarizar los datos
+# Escalar los datos para normalización
 scaler = StandardScaler()
 scaled_data = scaler.fit_transform(numerical_data)
 
-# Convertir de nuevo a DataFrame para un manejo más fácil
+# Convertir de nuevo a DataFrame para manejo más fácil y consistencia
 scaled_df = pd.DataFrame(scaled_data, columns=numerical_data.columns)
 
+# Añadir columnas originales al DataFrame final
+final_data = pd.concat([data[non_numerical_columns], scaled_df], axis=1)
+
 # Aplicar k-Means clustering
-kmeans = KMeans(n_clusters=2, random_state=42)
-data['Cluster'] = kmeans.fit_predict(scaled_df)
+kmeans = KMeans(n_clusters=3, random_state=42)
+final_data['Cluster'] = kmeans.fit_predict(scaled_df)
 
 # Reducir dimensiones para visualización con PCA
 pca = PCA(n_components=2)
 pca_result = pca.fit_transform(scaled_df)
 
 # Añadir resultados de PCA al DataFrame
-data['PCA1'] = pca_result[:, 0]
-data['PCA2'] = pca_result[:, 1]
+final_data['PCA1'] = pca_result[:, 0]
+final_data['PCA2'] = pca_result[:, 1]
 
-# Visualizar los clusters
+# Visualización de clusters
 plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PCA1', y='PCA2', hue='Cluster', data=data, palette='viridis')
+sns.scatterplot(x='PCA1', y='PCA2', hue='Cluster', data=final_data, palette='viridis')
 plt.title('Clusters Visualized with PCA')
 plt.show()
 
-# Información sobre los centroides
+# Mostrar centroides del clustering
 centroids = scaler.inverse_transform(kmeans.cluster_centers_)
 centroids_df = pd.DataFrame(centroids, columns=numerical_data.columns)
 print("Cluster Centroids:")
 print(centroids_df)
 
-# Dividir datos para entrenamiento y prueba
+# Preparar datos para clasificación
 X = scaled_df
-y = data['Cluster']
+y = final_data['Cluster']
 
 # Balancear las clases con SMOTE
 smote = SMOTE(random_state=42)
 X_resampled, y_resampled = smote.fit_resample(X, y)
 
-# Dividir en entrenamiento y prueba
+# Dividir datos en entrenamiento y prueba
 from sklearn.model_selection import train_test_split
 X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.2, random_state=42)
 
-# Sistema de épocas
-max_epochs = 100
-target_accuracy = 0.90  # Precisión objetivo
-history = {"accuracy": [], "loss": []}  # Historial para graficar
-
-# Configuración del modelo
+# Configuración del modelo MLP
 mlp = MLPClassifier(
     hidden_layer_sizes=(100,),
     activation='relu',
     solver='adam',
     random_state=42,
-    max_iter=1,  # Entrenaremos manualmente por épocas
-    warm_start=True  # Permite continuar el entrenamiento sin reiniciar el modelo
+    max_iter=300  # Aumentado para asegurar buen entrenamiento
 )
 
-# Entrenamiento por épocas
-for epoch in range(1, max_epochs + 1):
-    mlp.fit(X_train, y_train)  # Entrenamiento de una época
+# Entrenamiento del modelo
+mlp.fit(X_train, y_train)
 
-    # Predicciones en el conjunto de prueba
-    y_pred = mlp.predict(X_test)
-
-    # Evaluación del modelo
-    epoch_accuracy = accuracy_score(y_test, y_pred)
-    epoch_loss = 1 - epoch_accuracy  # Usamos pérdida como (1 - accuracy)
-
-    # Almacenar historial
-    history["accuracy"].append(epoch_accuracy)
-    history["loss"].append(epoch_loss)
-
-    print(f"Epoch {epoch}/{max_epochs} - Accuracy: {epoch_accuracy:.2f}, Loss: {epoch_loss:.2f}")
-
-    # Detener el entrenamiento si alcanzamos la precisión objetivo
-    if epoch_accuracy >= target_accuracy:
-        print(f"\nTarget accuracy of {target_accuracy * 100}% reached at epoch {epoch}. Stopping training.")
-        break
-
-# Reporte final
+# Evaluación del modelo
+y_pred = mlp.predict(X_test)
 print("\nFinal Classification Report:")
 print(classification_report(y_test, y_pred))
-print(f"Final Accuracy: {epoch_accuracy:.2f}")
+print(f"Final Accuracy: {accuracy_score(y_test, y_pred):.2f}")
 print("Confusion Matrix:")
 print(confusion_matrix(y_test, y_pred))
 
-# Gráficas de desempeño
-plt.figure(figsize=(12, 5))
+# Función de evaluación interactiva
+def evaluate_model(features):
+    """
+    Evalúa el modelo dado un vector de características.
+    """
+    # Escalar las características
+    features_scaled = scaler.transform([features])
+    # Hacer la predicción
+    prediction = mlp.predict(features_scaled)[0]
+    # Mapear los clusters a tipos de virus
+    cluster_map = {0: 'R5', 1: 'X4', 2: 'R5X4'}
+    return cluster_map.get(prediction, "Unknown")
 
-# Precisión por época
-plt.subplot(1, 2, 1)
-plt.plot(range(1, len(history["accuracy"]) + 1), history["accuracy"], label='Accuracy', color='blue')
-plt.axhline(y=target_accuracy, color='red', linestyle='--', label='Target Accuracy')
-plt.title('Accuracy per Epoch')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.legend()
+# Ejemplo de evaluación
+example_features = scaled_df.iloc[0].tolist()  # Usar el primer registro como ejemplo
+predicted_type = evaluate_model(example_features)
+print(f"\nPredicted Type for Example Features: {predicted_type}")
 
-# Pérdida por época
-plt.subplot(1, 2, 2)
-plt.plot(range(1, len(history["loss"]) + 1), history["loss"], label='Loss', color='orange')
-plt.title('Loss per Epoch')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
-
-plt.tight_layout()
-
-# Visualizar los centroides en el espacio 2D (usando PCA)
+# Matriz de confusión como heatmap
 plt.figure(figsize=(8, 6))
-
-# Reducir dimensiones para los centroides (para graficarlos en 2D)
-pca_centroids = pca.transform(centroids)
-
-# Plot de los clusters (agregar puntos de los datos)
-sns.scatterplot(x='PCA1', y='PCA2', hue='Cluster', data=data, palette='viridis', alpha=0.6)
-
-# Plot de los centroides
-plt.scatter(pca_centroids[:, 0], pca_centroids[:, 1], s=200, c='red', marker='X', label='Centroids')
-
-plt.title('Cluster Centroids')
-plt.legend()
-plt.show()
-
-# Matriz de confusión
 cm = confusion_matrix(y_test, y_pred)
-
-# Crear el heatmap para visualizar la matriz de confusión
-plt.figure(figsize=(8, 6))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Cluster 0', 'Cluster 1'], yticklabels=['Cluster 0', 'Cluster 1'])
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['R5', 'X4', 'R5X4'], yticklabels=['R5', 'X4', 'R5X4'])
 plt.title('Confusion Matrix')
 plt.xlabel('Predicted')
 plt.ylabel('True')
